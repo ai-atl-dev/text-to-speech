@@ -56,17 +56,17 @@ steps:
         set -euo pipefail
 
         IMAGE_URI=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO_NAME}/${_IMAGE_NAME}:latest
-        echo "Uploading model resource using image: $IMAGE_URI"
+        echo "Uploading model resource using image: $$IMAGE_URI"
         MODEL_UPLOAD_OUT=$(gcloud ai models upload \
           --region=${_REGION} \
           --display-name="${_IMAGE_NAME}-model" \
-          --container-image-uri="$IMAGE_URI" \
+          --container-image-uri="$$IMAGE_URI" \
           --format="get(name)" ) || (echo "model upload failed" && exit 1)
-        echo "MODEL resource: $MODEL_UPLOAD_OUT"
-        MODEL_ID="$MODEL_UPLOAD_OUT"
+        echo "MODEL resource: $$MODEL_UPLOAD_OUT"
+        MODEL_ID="$$MODEL_UPLOAD_OUT"
 
         # store model id to a file for later steps
-        echo "$MODEL_ID" > /workspace/last_model_id.txt
+        echo "$$MODEL_ID" > /workspace/last_model_id.txt
 
   # 4) Ensure a Vertex Endpoint exists (create if not)
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
@@ -78,14 +78,14 @@ steps:
         REGION=${_REGION}
         EP_NAME="${_SERVICE_DISPLAY_NAME}"
         # try to find endpoint
-        EXISTING=$(gcloud ai endpoints list --region=${REGION} --filter="displayName=${EP_NAME}" --format="value(name)" || true)
-        if [ -z "$EXISTING" ]; then
+        EXISTING=$(gcloud ai endpoints list --region=${REGION} --filter="displayName=$$EP_NAME" --format="value(name)" || true)
+        if [ -z "$$EXISTING" ]; then
           echo "Creating endpoint ${EP_NAME} in ${REGION}"
           CREATED=$(gcloud ai endpoints create --region=${REGION} --display-name="${EP_NAME}" --format="get(name)")
-          echo "$CREATED" > /workspace/last_endpoint_id.txt
+          echo "$$CREATED" > /workspace/last_endpoint_id.txt
         else
-          echo "Found existing endpoint: $EXISTING"
-          echo "$EXISTING" > /workspace/last_endpoint_id.txt
+          echo "Found existing endpoint: $$EXISTING"
+          echo "$$EXISTING" > /workspace/last_endpoint_id.txt
         fi
 
   # 5) Deploy the model to the endpoint with GPU (a2-highgpu-1g / A100)
@@ -98,12 +98,12 @@ steps:
         REGION=${_REGION}
         MODEL_ID=$(cat /workspace/last_model_id.txt)
         ENDPOINT_ID=$(cat /workspace/last_endpoint_id.txt)
-        echo "Deploying model ${MODEL_ID} -> endpoint ${ENDPOINT_ID}"
+        echo "Deploying model $$MODEL_ID -> endpoint $$ENDPOINT_ID"
 
         # If already deployed same model, skip; otherwise deploy new model
-        gcloud ai endpoints deploy-model ${ENDPOINT_ID} \
+        gcloud ai endpoints deploy-model $$ENDPOINT_ID \
           --region=${REGION} \
-          --model=${MODEL_ID} \
+          --model=$$MODEL_ID \
           --display-name="${_IMAGE_NAME}-deployed" \
           --machine-type="a2-highgpu-1g" \
           --accelerator-type="NVIDIA_A100" \
