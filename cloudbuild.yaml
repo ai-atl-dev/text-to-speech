@@ -1,0 +1,29 @@
+steps:
+  # 1️⃣ Build the Docker image
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', '${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REGION}/${_IMAGE_NAME}:latest', '.']
+
+  # 2️⃣ Push the image to Artifact Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', '${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REGION}/${_IMAGE_NAME}:latest']
+
+  # 3️⃣ Deploy automatically to Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: 'gcloud'
+    args:
+      [
+        'run', 'deploy', '${_IMAGE_NAME}',
+        '--image', '${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REGION}/${_IMAGE_NAME}:latest',
+        '--region', '${_REGION}',
+        '--platform', 'managed',
+        '--allow-unauthenticated',
+        '--cpu', '2',
+        '--memory', '4Gi',
+        '--max-instances', '5',
+        '--timeout', '600s'
+      ]
+
+images:
+  - '${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REGION}/${_IMAGE_NAME}:latest'
+
+timeout: '1200s'
