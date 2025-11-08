@@ -80,8 +80,8 @@ steps:
         # try to find endpoint
         EXISTING=$(gcloud ai endpoints list --region=$$REGION --filter="displayName=$$EP_NAME" --format="value(name)" || true)
         if [ -z "$$EXISTING" ]; then
-          echo "Creating endpoint ${EP_NAME} in ${REGION}"
-          CREATED=$(gcloud ai endpoints create --region=$$REGION --display-name="${EP_NAME}" --format="get(name)")
+          echo "Creating endpoint $$EP_NAME in $$REGION"
+          CREATED=$(gcloud ai endpoints create --region=$$REGION --display-name="$$EP_NAME" --format="get(name)")
           echo "$$CREATED" > /workspace/last_endpoint_id.txt
         else
           echo "Found existing endpoint: $$EXISTING"
