@@ -78,10 +78,10 @@ steps:
         REGION=${_REGION}
         EP_NAME="${_SERVICE_DISPLAY_NAME}"
         # try to find endpoint
-        EXISTING=$(gcloud ai endpoints list --region=${REGION} --filter="displayName=$$EP_NAME" --format="value(name)" || true)
+        EXISTING=$(gcloud ai endpoints list --region=$$REGION --filter="displayName=$$EP_NAME" --format="value(name)" || true)
         if [ -z "$$EXISTING" ]; then
           echo "Creating endpoint ${EP_NAME} in ${REGION}"
-          CREATED=$(gcloud ai endpoints create --region=${REGION} --display-name="${EP_NAME}" --format="get(name)")
+          CREATED=$(gcloud ai endpoints create --region=$$REGION --display-name="${EP_NAME}" --format="get(name)")
           echo "$$CREATED" > /workspace/last_endpoint_id.txt
         else
           echo "Found existing endpoint: $$EXISTING"
@@ -102,7 +102,7 @@ steps:
 
         # If already deployed same model, skip; otherwise deploy new model
         gcloud ai endpoints deploy-model $$ENDPOINT_ID \
-          --region=${REGION} \
+          --region=$$REGION \
           --model=$$MODEL_ID \
           --display-name="${_IMAGE_NAME}-deployed" \
           --machine-type="a2-highgpu-1g" \
