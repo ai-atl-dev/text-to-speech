@@ -1,29 +1,117 @@
+# cloudbuild.yaml
+# Builds image, pre-downloads HF weights during build (via build-arg secret),
+# pushes to Artifact Registry, then uploads + deploys container to Vertex AI GPU endpoint.
+# Trigger: text-to-speech should be configured to use this file.
+
+substitutions:
+  _REGION: "us-central1"
+  _REPO_NAME: "text_to_speech"
+  _IMAGE_NAME: "csm"
+  _SERVICE_DISPLAY_NAME: "csm-vertex-service"
+
+# Use the Secret Manager secret "HUGGINGFACE_TOKEN" (create below).
+availableSecrets:
+  secretManager:
+    - versionName: projects/$PROJECT_ID/secrets/HUGGINGFACE_TOKEN/versions/latest
+      env: HUGGINGFACE_TOKEN
+
 steps:
-  # 1️⃣ Build the Docker image
+  # 1) Build the image (inject HUGGINGFACE_TOKEN as build-arg for pre-download)
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['build', '-t', '${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REGION}/${_IMAGE_NAME}:latest', '.']
-
-  # 2️⃣ Push the image to Artifact Registry
-  - name: 'gcr.io/cloud-builders/docker'
-    args: ['push', '${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REGION}/${_IMAGE_NAME}:latest']
-
-  # 3️⃣ Deploy automatically to Cloud Run
-  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
-    entrypoint: 'gcloud'
+    entrypoint: 'bash'
     args:
-      [
-        'run', 'deploy', '${_IMAGE_NAME}',
-        '--image', '${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REGION}/${_IMAGE_NAME}:latest',
-        '--region', '${_REGION}',
-        '--platform', 'managed',
-        '--allow-unauthenticated',
-        '--cpu', '2',
-        '--memory', '4Gi',
-        '--max-instances', '5',
-        '--timeout', '600s'
-      ]
+      - -c
+      - |
+        docker build \
+          --build-arg HUGGINGFACE_TOKEN="$HUGGINGFACE_TOKEN" \
+          -t ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO_NAME}/${_IMAGE_NAME}:$SHORT_SHA \
+          -f Dockerfile \
+          .
+
+  # 2) Tag latest and push to Artifact Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - tag
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO_NAME}/${_IMAGE_NAME}:$SHORT_SHA
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO_NAME}/${_IMAGE_NAME}:latest
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - push
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO_NAME}/${_IMAGE_NAME}:$SHORT_SHA
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - push
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO_NAME}/${_IMAGE_NAME}:latest
+
+  # 3) Upload container image as a Vertex Model resource
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: 'bash'
+    args:
+      - -c
+      - |
+        set -euo pipefail
+
+        IMAGE_URI=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO_NAME}/${_IMAGE_NAME}:latest
+        echo "Uploading model resource using image: $IMAGE_URI"
+        MODEL_UPLOAD_OUT=$(gcloud ai models upload \
+          --region=${_REGION} \
+          --display-name="${_IMAGE_NAME}-model" \
+          --container-image-uri="$IMAGE_URI" \
+          --format="get(name)" ) || (echo "model upload failed" && exit 1)
+        echo "MODEL resource: $MODEL_UPLOAD_OUT"
+        MODEL_ID="$MODEL_UPLOAD_OUT"
+
+        # store model id to a file for later steps
+        echo "$MODEL_ID" > /workspace/last_model_id.txt
+
+  # 4) Ensure a Vertex Endpoint exists (create if not)
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: 'bash'
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        REGION=${_REGION}
+        EP_NAME="${_SERVICE_DISPLAY_NAME}"
+        # try to find endpoint
+        EXISTING=$(gcloud ai endpoints list --region=${REGION} --filter="displayName=${EP_NAME}" --format="value(name)" || true)
+        if [ -z "$EXISTING" ]; then
+          echo "Creating endpoint ${EP_NAME} in ${REGION}"
+          CREATED=$(gcloud ai endpoints create --region=${REGION} --display-name="${EP_NAME}" --format="get(name)")
+          echo "$CREATED" > /workspace/last_endpoint_id.txt
+        else
+          echo "Found existing endpoint: $EXISTING"
+          echo "$EXISTING" > /workspace/last_endpoint_id.txt
+        fi
+
+  # 5) Deploy the model to the endpoint with GPU (a2-highgpu-1g / A100)
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: 'bash'
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        REGION=${_REGION}
+        MODEL_ID=$(cat /workspace/last_model_id.txt)
+        ENDPOINT_ID=$(cat /workspace/last_endpoint_id.txt)
+        echo "Deploying model ${MODEL_ID} -> endpoint ${ENDPOINT_ID}"
+
+        # If already deployed same model, skip; otherwise deploy new model
+        gcloud ai endpoints deploy-model ${ENDPOINT_ID} \
+          --region=${REGION} \
+          --model=${MODEL_ID} \
+          --display-name="${_IMAGE_NAME}-deployed" \
+          --machine-type="a2-highgpu-1g" \
+          --accelerator-type="NVIDIA_A100" \
+          --accelerator-count=1 \
+          --min-replica-count=1 \
+          --max-replica-count=1 \
+          --traffic-split=0=100 \
+          --quiet
 
 images:
-  - '${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REGION}/${_IMAGE_NAME}:latest'
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO_NAME}/${_IMAGE_NAME}:latest
 
-timeout: '1200s'
+timeout: "3600s"
