@@ -19,11 +19,13 @@ steps:
   # 1) Build the image (inject HUGGINGFACE_TOKEN as build-arg for pre-download)
   - name: 'gcr.io/cloud-builders/docker'
     entrypoint: 'bash'
+    secretEnv:
+      - HUGGINGFACE_TOKEN
     args:
       - -c
       - |
         docker build \
-          --build-arg HUGGINGFACE_TOKEN="$HUGGINGFACE_TOKEN" \
+          --build-arg HUGGINGFACE_TOKEN="$$HUGGINGFACE_TOKEN" \
           -t ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO_NAME}/${_IMAGE_NAME}:$SHORT_SHA \
           -f Dockerfile \
           .
