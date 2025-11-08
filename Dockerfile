@@ -35,16 +35,7 @@ ENV TRANSFORMERS_CACHE=$HF_HOME
 
 # Pre-download the csm-1b repo into HF_HOME during build so the image contains weights.
 # This avoids runtime downloads and cold starts.
-RUN python - <<'PY'
-import os, sys
-from huggingface_hub import snapshot_download
-token = os.environ.get("HUGGINGFACE_TOKEN")
-if not token:
-    print("Warning: HUGGINGFACE_TOKEN not provided at build time; snapshot_download may fail if repo gated.", file=sys.stderr)
-# Download 'sesame/csm-1b' into HF_HOME (trust remote code to allow repository with custom code)
-snapshot_download(repo_id="sesame/csm-1b", cache_dir=os.environ.get("HF_HOME", "/opt/hf_cache"), token=token, allow_patterns=None)
-print("Downloaded sesame/csm-1b into", os.environ.get("HF_HOME"))
-PY
+RUN python -c "import os, sys; from huggingface_hub import snapshot_download; token=os.environ.get('HUGGINGFACE_TOKEN'); snapshot_download(repo_id='sesame/csm-1b', cache_dir=os.environ.get('HF_HOME', '/opt/hf_cache'), token=token, allow_patterns=None); print('Downloaded sesame/csm-1b into', os.environ.get('HF_HOME'))"
 
 # Expose port and run
 EXPOSE 8080
