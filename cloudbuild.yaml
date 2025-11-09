@@ -5,40 +5,51 @@
 
 substitutions:
   _REGION: "us-central1"
-  _REPO_NAME: "text_to_speech"
+  _REPO_NAME: "text-to-speech"
   _IMAGE_NAME: "csm"
   _SERVICE_DISPLAY_NAME: "csm-vertex-service"
 
 steps:
-  # 1) Build the image (inject HUGGINGFACE_TOKEN as build-arg for pre-download)
+  # 0) Warm the Docker build cache by pulling the previously pushed image (if any)
   - name: 'gcr.io/cloud-builders/docker'
     entrypoint: 'bash'
     args:
       - -c
       - |
+        set -e
+        IMAGE_URI=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO_NAME}/${_IMAGE_NAME}
+        docker pull $$IMAGE_URI:latest || true
+
+  # 1) Build the image (inject HUGGINGFACE_TOKEN as build-arg for pre-download) with remote cache
+  - name: 'gcr.io/cloud-builders/docker'
+    entrypoint: 'bash'
+    env:
+      - DOCKER_BUILDKIT=1
+      - BUILDKIT_INLINE_CACHE=1
+    args:
+      - -c
+      - |
+        set -e
         TAG=${SHORT_SHA:-$BUILD_ID}
-        docker build \
+        IMAGE_URI=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO_NAME}/${_IMAGE_NAME}
+        docker build --pull \
           --build-arg HUGGINGFACE_TOKEN="$$HUGGINGFACE_TOKEN" \
-          -t ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO_NAME}/${_IMAGE_NAME}:$$TAG \
+          --cache-from $$IMAGE_URI:latest \
+          -t $$IMAGE_URI:$$TAG \
+          -t $$IMAGE_URI:latest \
           -f Dockerfile \
           .
 
-  # 2) Tag latest and push to Artifact Registry
+  # 2) Push both the commit tag and latest to Artifact Registry
   - name: 'gcr.io/cloud-builders/docker'
     entrypoint: 'bash'
     args:
       - -c
       - |
+        set -e
         TAG=${SHORT_SHA:-$BUILD_ID}
-        docker tag ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO_NAME}/${_IMAGE_NAME}:$$TAG ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO_NAME}/${_IMAGE_NAME}:latest
-
-  - name: 'gcr.io/cloud-builders/docker'
-    entrypoint: 'bash'
-    args:
-      - -c
-      - |
-        TAG=${SHORT_SHA:-$BUILD_ID}
-        docker push ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO_NAME}/${_IMAGE_NAME}:$$TAG
+        IMAGE_URI=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO_NAME}/${_IMAGE_NAME}
+        docker push $$IMAGE_URI:$$TAG
 
   - name: 'gcr.io/cloud-builders/docker'
     args:
