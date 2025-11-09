@@ -1,5 +1,5 @@
 # Dockerfile (OVERWRITE your existing Dockerfile with this exact content)
-FROM nvidia/cuda:12.4.0-cudnn8-runtime-ubuntu22.04
+FROM nvidia/cuda:12.1.0-cudnn8-runtime-ubuntu22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -34,8 +34,8 @@ ENV HF_DATASETS_CACHE=$HF_HOME
 ENV TRANSFORMERS_CACHE=$HF_HOME
 
 # Pre-download the csm-1b repo into HF_HOME during build so the image contains weights.
-# This avoids runtime downloads and cold starts.
-RUN python -c "import os, sys; from huggingface_hub import snapshot_download; token=os.environ.get('HUGGINGFACE_TOKEN'); snapshot_download(repo_id='sesame/csm-1b', cache_dir=os.environ.get('HF_HOME', '/opt/hf_cache'), token=token, allow_patterns=None); print('Downloaded sesame/csm-1b into', os.environ.get('HF_HOME'))"
+# If access is gated or token missing, skip pre-download (runtime will fetch).
+RUN python -c "import os, sys; from huggingface_hub import snapshot_download; token=os.environ.get('HUGGINGFACE_TOKEN'); snapshot_download(repo_id='sesame/csm-1b', cache_dir=os.environ.get('HF_HOME', '/opt/hf_cache'), token=token, allow_patterns=None); print('Downloaded sesame/csm-1b into', os.environ.get('HF_HOME'))" || echo "HF snapshot pre-download skipped (no access token or repo gated)."
 
 # Expose port and run
 EXPOSE 8080
