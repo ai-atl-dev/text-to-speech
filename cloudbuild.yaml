@@ -3,6 +3,7 @@
 # pushes to Artifact Registry, then uploads + deploys container to Vertex AI GPU endpoint.
 # Trigger: text-to-speech should be configured to use this file.
 
+
 substitutions:
   _REGION: "us-central1"
   _REPO_NAME: "text-to-speech"
@@ -26,6 +27,8 @@ steps:
     env:
       - DOCKER_BUILDKIT=1
       - BUILDKIT_INLINE_CACHE=1
+    secretEnv:
+      - HUGGINGFACE_TOKEN
     args:
       - -c
       - |
@@ -129,3 +132,9 @@ timeout: "3600s"
 
 options:
   logging: CLOUD_LOGGING_ONLY
+
+# Provide the Hugging Face token to step 1 via Secret Manager
+availableSecrets:
+  secretManager:
+    - versionName: projects/$PROJECT_ID/secrets/HUGGINGFACE_TOKEN/versions/latest
+      env: HUGGINGFACE_TOKEN
